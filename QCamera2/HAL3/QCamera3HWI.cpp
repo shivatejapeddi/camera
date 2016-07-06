@@ -3719,6 +3719,7 @@ int QCamera3HardwareInterface::processCaptureRequest(
                 (mLinkedCameraId != mCameraId) ) {
                 LOGE("Dualcam: mLinkedCameraId %d is invalid, current cam id = %d",
                     mLinkedCameraId, mCameraId);
+                pthread_mutex_unlock(&mMutex);
                 goto error_exit;
             }
         }
@@ -3736,6 +3737,7 @@ int QCamera3HardwareInterface::processCaptureRequest(
             if (sessionId[mLinkedCameraId] == 0xDEADBEEF) {
                 LOGE("Dualcam: Invalid Session Id ");
                 pthread_mutex_unlock(&gCamLock);
+                pthread_mutex_unlock(&mMutex);
                 goto error_exit;
             }
 
@@ -3755,6 +3757,7 @@ int QCamera3HardwareInterface::processCaptureRequest(
                     mCameraHandle->camera_handle, m_pRelCamSyncBuf);
             if (rc < 0) {
                 LOGE("Dualcam: link failed");
+                pthread_mutex_unlock(&mMutex);
                 goto error_exit;
             }
         }
@@ -3956,6 +3959,7 @@ no_error:
             if(ADD_SET_PARAM_ENTRY_TO_BATCH(mParameters,
                 CAM_INTF_META_FRAME_NUMBER, request->frame_number)) {
                 LOGE("Failed to set the frame number in the parameters");
+                pthread_mutex_unlock(&mMutex);
                 return BAD_VALUE;
             }
         }
