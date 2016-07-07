@@ -3564,6 +3564,23 @@ int QCamera3HardwareInterface::processCaptureRequest(
                 LOGE("Failed to disable CDS for HFR mode");
 
         }
+
+        if (m_debug_avtimer || meta.exists(QCAMERA3_USE_AV_TIMER)) {
+            uint8_t* use_av_timer = NULL;
+
+            if (m_debug_avtimer){
+                use_av_timer = &m_debug_avtimer;
+            }
+            else{
+                use_av_timer =
+                    meta.find(QCAMERA3_USE_AV_TIMER).data.u8;
+            }
+
+            if (ADD_SET_PARAM_ENTRY_TO_BATCH(mParameters, CAM_INTF_META_USE_AV_TIMER, *use_av_timer)) {
+                rc = BAD_VALUE;
+            }
+        }
+
         setMobicat();
 
         /* Set fps and hfr mode while sending meta stream info so that sensor
@@ -3583,6 +3600,7 @@ int QCamera3HardwareInterface::processCaptureRequest(
             }
         }
 
+
         //TODO: validate the arguments, HSV scenemode should have only the
         //advertised fps ranges
 
@@ -3598,6 +3616,7 @@ int QCamera3HardwareInterface::processCaptureRequest(
                     mStreamConfigInfo.postprocess_mask[i],
                     mStreamConfigInfo.format[i]);
         }
+
         rc = mCameraHandle->ops->set_parms(mCameraHandle->camera_handle,
                     mParameters);
         if (rc < 0) {
@@ -9496,22 +9515,6 @@ int QCamera3HardwareInterface::translateToHalMetadata
         ADD_SET_PARAM_ARRAY_TO_BATCH(hal_metadata, CAM_INTF_META_PRIVATE_DATA,
                 privatedata.data.i32, privatedata.count, count);
         if (privatedata.count != count) {
-            rc = BAD_VALUE;
-        }
-    }
-
-    if (m_debug_avtimer || frame_settings.exists(QCAMERA3_USE_AV_TIMER)) {
-        uint8_t* use_av_timer = NULL;
-
-        if (m_debug_avtimer){
-            use_av_timer = &m_debug_avtimer;
-        }
-        else{
-            use_av_timer =
-                frame_settings.find(QCAMERA3_USE_AV_TIMER).data.u8;
-        }
-
-        if (ADD_SET_PARAM_ENTRY_TO_BATCH(hal_metadata, CAM_INTF_META_USE_AV_TIMER, *use_av_timer)) {
             rc = BAD_VALUE;
         }
     }
