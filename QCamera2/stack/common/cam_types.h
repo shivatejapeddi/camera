@@ -1355,6 +1355,7 @@ typedef struct {
     cam_focus_mode_type focus_mode;        /* focus mode from backend */
     int32_t focus_pos;
     cam_af_flush_info_t flush_info;
+    uint8_t isDepth;
 } cam_auto_focus_data_t;
 
 typedef struct {
@@ -2185,6 +2186,7 @@ typedef enum {
     CAM_INTF_PARM_JPEG_ENCODE_CROP,
     /* Param of scaling information for JPEG encoder */
     CAM_INTF_PARM_JPEG_SCALE_DIMENSION,
+    CAM_INTF_META_FOCUS_DEPTH_INFO,
     CAM_INTF_PARM_MAX
 } cam_intf_parm_type_t;
 
