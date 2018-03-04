@@ -8782,6 +8782,7 @@ void *QCamera2HardwareInterface::deferredWorkRoutine(void *obj)
                         }
 
                         rc = pme->mParameters.getRelatedCamCalibration(
+                            &(pme->mJpegMetadata.otp_calibration_data));
                         LOGD("Dumping Calibration Data Version Id %f rc %d",
                                 pme->mJpegMetadata.otp_calibration_data.calibration_format_version,
                                 rc);
