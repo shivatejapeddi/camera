@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, The Linux Foundataion. All rights reserved.
+/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -30,15 +30,23 @@
 #ifndef __QCAMERA_FLASH_H__
 #define __QCAMERA_FLASH_H__
 
-#include <hardware/camera_common.h>
+// Camera dependencies
+#include "hardware/camera_common.h"
 
 extern "C" {
-#include <mm_camera_interface.h>
+#include "mm_camera_interface.h"
 }
 
 namespace qcamera {
 
 #define QCAMERA_TORCH_CURRENT_VALUE 200
+
+enum flashLed
+{
+    LED_FIRST,
+    LED_SECOND,
+    LED_DUAL
+};
 
 class QCameraFlash {
 public:
@@ -46,7 +54,7 @@ public:
 
     int32_t registerCallbacks(const camera_module_callbacks_t* callbacks);
     int32_t initFlash(const int camera_id);
-    int32_t setFlashMode(const int camera_id, const bool on);
+    int32_t setFlashMode(const int camera_id, const bool on, flashLed led);
     int32_t deinitFlash(const int camera_id);
     int32_t reserveFlashForCamera(const int camera_id);
     int32_t releaseFlashFromCamera(const int camera_id);
@@ -58,7 +66,7 @@ private:
     QCameraFlash& operator=(const QCameraFlash&);
 
     const camera_module_callbacks_t *m_callbacks;
-    int32_t m_flashFds[MM_CAMERA_MAX_NUM_SENSORS];
+    std::pair <int32_t,int32_t> m_flashFds[MM_CAMERA_MAX_NUM_SENSORS];
     bool m_flashOn[MM_CAMERA_MAX_NUM_SENSORS];
     bool m_cameraOpen[MM_CAMERA_MAX_NUM_SENSORS];
 };

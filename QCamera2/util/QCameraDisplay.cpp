@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -29,9 +29,16 @@
 
 #define LOG_TAG "QCameraDisplay"
 
+// To remove
 #include <cutils/properties.h>
+
+// Camera dependencies
 #include "QCamera2HWI.h"
 #include "QCameraDisplay.h"
+
+extern "C" {
+#include "mm_camera_dbg.h"
+}
 
 #define CAMERA_VSYNC_WAIT_MS               33 // Used by vsync thread to wait for vsync timeout.
 #define DISPLAY_EVENT_RECEIVER_ARRAY_SIZE  1
@@ -52,7 +59,8 @@ namespace qcamera {
  *
  * RETURN     : always returns 1
  *==========================================================================*/
-int QCameraDisplay::vsyncEventReceiverCamera(int fd, int events, void* data) {
+int QCameraDisplay::vsyncEventReceiverCamera(__unused int fd,
+                                             __unused int events, void* data) {
     android::DisplayEventReceiver::Event buffer[DISPLAY_EVENT_RECEIVER_ARRAY_SIZE];
     QCameraDisplay* pQCameraDisplay = (QCameraDisplay *) data;
     ssize_t n;
@@ -87,7 +95,7 @@ void* QCameraDisplay::vsyncThreadCamera(void * data)
     looper = new android::Looper(false);
     status_t status = pQCameraDisplay->mDisplayEventReceiver.initCheck();
     if (status != NO_ERROR) {
-        ALOGE("Initialization of DisplayEventReceiver failed with status: %d", status);
+        LOGE("Initialization of DisplayEventReceiver failed with status: %d", status);
         return NULL;
     }
     looper->addFd(pQCameraDisplay->mDisplayEventReceiver.getFd(), 0, ALOOPER_EVENT_INPUT,

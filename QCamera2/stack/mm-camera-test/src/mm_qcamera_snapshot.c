@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -27,8 +27,9 @@
  *
  */
 
-#include "mm_qcamera_dbg.h"
+// Camera dependencies
 #include "mm_qcamera_app.h"
+#include "mm_qcamera_dbg.h"
 
 /* This callback is received once the complete JPEG encoding is done */
 static void jpeg_encode_cb(jpeg_job_status_t status,
@@ -177,6 +178,7 @@ int createEncodingSession(mm_camera_test_obj_t *test_obj,
  *
  *
  **/
+__unused
 static void mm_app_snapshot_metadata_notify_cb(mm_camera_super_buf_t *bufs,
   void *user_data)
 {
@@ -575,6 +577,8 @@ int mm_app_stop_capture_raw(mm_camera_test_obj_t *test_obj)
     int rc = MM_CAMERA_OK;
     mm_camera_channel_t *ch = NULL;
     int i;
+    cam_stream_size_info_t abc ;
+    memset (&abc , 0, sizeof (cam_stream_size_info_t));
 
     ch = mm_app_get_channel_by_type(test_obj, MM_CHANNEL_TYPE_CAPTURE);
 
@@ -585,6 +589,10 @@ int mm_app_stop_capture_raw(mm_camera_test_obj_t *test_obj)
 
     for ( i = 0 ; i < ch->num_streams ; i++ ) {
         mm_app_del_stream(test_obj, ch, &ch->streams[i]);
+    }
+    rc = setmetainfoCommand(test_obj, &abc);
+    if (rc != MM_CAMERA_OK) {
+       LOGE(" meta info command failed\n");
     }
     mm_app_del_channel(test_obj, ch);
 

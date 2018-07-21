@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -27,11 +27,14 @@
  *
  */
 
+// System dependencies
 #include <pthread.h>
+#include <string.h>
+#include <math.h>
+
+// JPEG dependencies
 #include "mm_jpeg_dbg.h"
 #include "mm_jpeg.h"
-#include <errno.h>
-#include <math.h>
 
 
 #define LOWER(a)               ((a) & 0xFFFF)
@@ -326,14 +329,14 @@ int process_sensor_data(cam_sensor_params_t *p_sensor_params,
   }
 
   /*Flash*/
-  short val_short;
+  short val_short = 0;
   int flash_mode_exif, flash_fired;
   if (p_sensor_params->flash_state == CAM_FLASH_STATE_FIRED) {
     flash_fired = 1;
   } else {
     flash_fired = 0;
   }
-  LOGD("Flash value %d flash mode %d flash state %d", val_short,
+  LOGD("Flash mode %d flash state %d",
     p_sensor_params->flash_mode, p_sensor_params->flash_state);
 
   switch(p_sensor_params->flash_mode) {
@@ -629,10 +632,12 @@ int process_meta_data(metadata_buffer_t *p_meta, QOMX_EXIF_INFO *exif_info,
 
   if (p_meta) {
     short val_short = 0;
+    cam_asd_decision_t *scene_info = NULL;
 
-    IF_META_AVAILABLE(cam_auto_scene_t, scene_cap_type,
-        CAM_INTF_META_ASD_SCENE_CAPTURE_TYPE, p_meta) {
-      val_short = (short) *scene_cap_type;
+    IF_META_AVAILABLE(cam_asd_decision_t, scene_cap_type,
+        CAM_INTF_META_ASD_SCENE_INFO, p_meta) {
+      scene_info = (cam_asd_decision_t*)scene_cap_type;
+      val_short = (short) scene_info->detected_scene;
     }
 
     rc = addExifEntry(exif_info, EXIFTAGID_SCENE_CAPTURE_TYPE, EXIF_SHORT,
@@ -641,7 +646,7 @@ int process_meta_data(metadata_buffer_t *p_meta, QOMX_EXIF_INFO *exif_info,
       LOGE(": Error adding ASD Exif Entry");
     }
   } else {
-    LOGW(": Error adding ASD Exif Entry, no meta");
+    LOGE(": Error adding ASD Exif Entry, no meta");
   }
   return rc;
 }

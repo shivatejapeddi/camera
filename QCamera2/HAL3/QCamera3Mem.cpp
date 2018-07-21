@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundataion. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -29,18 +29,23 @@
 
 #define LOG_TAG "QCameraHWI_Mem"
 
-#include <string.h>
+// System dependencies
 #include <fcntl.h>
-#include <sys/mman.h>
-#include <utils/Log.h>
-#include <utils/Errors.h>
-#include <gralloc_priv.h>
-#include <qdMetaData.h>
-#include "QCamera3Mem.h"
+#define MMAN_H <SYSTEM_HEADER_PREFIX/mman.h>
+#include MMAN_H
+#include "gralloc_priv.h"
+
+// Display dependencies
+#include "qdMetaData.h"
+
+// Camera dependencies
 #include "QCamera3HWI.h"
+#include "QCamera3Mem.h"
+#include "QCameraTrace.h"
 
 extern "C" {
-#include <mm_camera_interface.h>
+#include "mm_camera_dbg.h"
+#include "mm_camera_interface.h"
 }
 
 using namespace android;
@@ -579,7 +584,6 @@ ALLOC_FAILED:
 int QCamera3HeapMemory::allocateOne(size_t size)
 {
     unsigned int heap_id_mask = 0x1 << ION_IOMMU_HEAP_ID;
-    uint32_t i;
     int rc = NO_ERROR;
 
     //Note that now we allow incremental allocation. In other words, we allow
@@ -736,7 +740,7 @@ QCamera3GrallocMemory::~QCamera3GrallocMemory()
  *              none-zero failure code
  *==========================================================================*/
 int QCamera3GrallocMemory::registerBuffer(buffer_handle_t *buffer,
-        cam_stream_type_t type)
+        __unused cam_stream_type_t type)
 {
     status_t ret = NO_ERROR;
     struct ion_fd_data ion_info_fd;

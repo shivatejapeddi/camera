@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundataion. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -29,11 +29,17 @@
 
 #define LOG_TAG "QCameraStream"
 
+// System dependencies
 #include <utils/Errors.h>
-#include <QComOMXMetadata.h>
+
+// Camera dependencies
 #include "QCameraBufferMaps.h"
 #include "QCamera2HWI.h"
 #include "QCameraStream.h"
+
+extern "C" {
+#include "mm_camera_dbg.h"
+}
 
 #define CAMERA_MIN_ALLOCATED_BUFFERS     3
 
@@ -169,11 +175,16 @@ int32_t QCameraStream::put_bufs(
  *==========================================================================*/
 int32_t QCameraStream::put_bufs_deffered(
         mm_camera_map_unmap_ops_tbl_t * /*ops_tbl */,
-        void * /*user_data*/ )
+        void * user_data )
 {
-    // No op
-    // Used for handling buffers with deffered allocation. They are freed separately.
-    return NO_ERROR;
+    QCameraStream *stream = reinterpret_cast<QCameraStream *>(user_data);
+
+    if (!stream) {
+        LOGE("put_bufs_deffered invalid stream pointer");
+        return NO_MEMORY;
+    }
+
+    return stream->putBufsDeffered();
 }
 
 /*===========================================================================
@@ -328,7 +339,8 @@ QCameraStream::QCameraStream(QCameraAllocator &allocator,
         mDefferedAllocation(deffered),
         wait_for_cond(false),
         mAllocTaskId(0),
-        mMapTaskId(0)
+        mMapTaskId(0),
+        mSyncCBEnabled(false)
 {
     mMemVtbl.user_data = this;
     if ( !deffered ) {
@@ -379,7 +391,7 @@ QCameraStream::~QCameraStream()
     mAllocator.waitForBackgroundTask(mMapTaskId);
     if (mBufAllocPid != 0) {
         cond_signal(true);
-        LOGL("Wait for buf allocation thread to join");
+        LOGL("Wait for buf allocation thread dead");
         // Wait for the allocation of additional stream buffers
         pthread_join(mBufAllocPid, NULL);
         mBufAllocPid = 0;
@@ -521,7 +533,7 @@ void QCameraStream::deleteStream()
  *              none-zero failure code
  *==========================================================================*/
 int32_t QCameraStream::unMapBuf(QCameraMemory *Buf,
-        cam_mapping_buf_type bufType, mm_camera_map_unmap_ops_tbl_t *ops_tbl)
+        cam_mapping_buf_type bufType, __unused mm_camera_map_unmap_ops_tbl_t *ops_tbl)
 {
     int32_t rc = NO_ERROR;
     uint8_t cnt;
@@ -567,10 +579,9 @@ int32_t QCameraStream::unMapBuf(QCameraMemory *Buf,
  *              none-zero failure code
  *==========================================================================*/
 int32_t QCameraStream::mapBufs(QCameraMemory *Buf,
-        cam_mapping_buf_type bufType, mm_camera_map_unmap_ops_tbl_t *ops_tbl)
+        cam_mapping_buf_type bufType, __unused mm_camera_map_unmap_ops_tbl_t *ops_tbl)
 {
     int32_t rc = NO_ERROR;
-    ssize_t bufSize = BAD_INDEX;
     uint32_t i = 0;
 
     QCameraBufferMaps bufferMaps;
@@ -1019,7 +1030,7 @@ void QCameraStream::dataNotifySYNCCB(mm_camera_super_buf_t *recvd_frame,
         LOGE("Not a valid stream to handle buf");
         return;
     }
-    if (stream->mSYNCDataCB != NULL)
+    if ((stream->mSyncCBEnabled) && (stream->mSYNCDataCB != NULL))
         stream->mSYNCDataCB(recvd_frame, stream, stream->mUserData);
     return;
 }
@@ -1168,13 +1179,27 @@ int32_t QCameraStream::bufDone(const void *opaque, bool isMetaData)
 {
     int32_t rc = NO_ERROR;
     int index = -1;
+    QCameraVideoMemory *mVideoMem = NULL;
 
     if ((mStreamInfo != NULL)
             && (mStreamInfo->streaming_mode == CAM_STREAMING_MODE_BATCH)
             && (mStreamBatchBufs != NULL)) {
         index = mStreamBatchBufs->getMatchBufIndex(opaque, isMetaData);
+        mVideoMem = (QCameraVideoMemory *)mStreamBatchBufs;
     } else if (mStreamBufs != NULL){
         index = mStreamBufs->getMatchBufIndex(opaque, isMetaData);
+        mVideoMem = (QCameraVideoMemory *)mStreamBufs;
+    }
+
+    //Close and delete duplicated native handle and FD's.
+    if (mVideoMem != NULL) {
+        rc = mVideoMem->closeNativeHandle(opaque, isMetaData);
+        if (rc != NO_ERROR) {
+            LOGE("Invalid video metadata");
+            return rc;
+        }
+    } else {
+        LOGE("Possible FD leak. Release recording called after stop");
     }
 
     if (index == -1 || index >= mNumBufs || mBufDefs == NULL) {
@@ -1401,11 +1426,11 @@ int32_t QCameraStream::getBufs(cam_frame_len_offset_t *offset,
  *              NO_ERROR  -- success
  *              none-zero failure code
  *==========================================================================*/
-int32_t QCameraStream::getBufsDeferred(cam_frame_len_offset_t *offset,
+int32_t QCameraStream::getBufsDeferred(__unused cam_frame_len_offset_t *offset,
         uint8_t *num_bufs,
         uint8_t **initial_reg_flag,
         mm_camera_buf_def_t **bufs,
-        mm_camera_map_unmap_ops_tbl_t *ops_tbl)
+        __unused mm_camera_map_unmap_ops_tbl_t *ops_tbl)
 {
     int32_t rc = NO_ERROR;
     // wait for allocation
@@ -2101,6 +2126,31 @@ int32_t QCameraStream::putBufs(mm_camera_map_unmap_ops_tbl_t *ops_tbl)
 }
 
 /*===========================================================================
+ * FUNCTION   : putBufsDeffered
+ *
+ * DESCRIPTION: function to deallocate deffered stream buffers
+ *
+ * PARAMETERS : none
+ *
+ * RETURN     : int32_t type of status
+ *              NO_ERROR  -- success
+ *              none-zero failure code
+ *==========================================================================*/
+int32_t QCameraStream::putBufsDeffered()
+{
+    if (mBufAllocPid != 0) {
+        cond_signal(true);
+        LOGH("%s: wait for buf allocation thread dead", __func__);
+        // Wait for the allocation of additional stream buffers
+        pthread_join(mBufAllocPid, NULL);
+        mBufAllocPid = 0;
+        LOGH("%s: return from buf allocation thread", __func__);
+    }
+    // Deallocation of the deffered stream buffers handled separately
+    return NO_ERROR;
+}
+
+/*===========================================================================
  * FUNCTION   : invalidateBuf
  *
  * DESCRIPTION: invalidate a specific stream buffer
@@ -2253,7 +2303,8 @@ int32_t QCameraStream::getFrameOffset(cam_frame_len_offset_t &offset)
     }
 
     offset = mFrameLenOffset;
-    if ((ROTATE_90 == mOnlineRotation) || (ROTATE_270 == mOnlineRotation)) {
+    if ((ROTATE_90 == mOnlineRotation) || (ROTATE_270 == mOnlineRotation)
+            || (offset.frame_len == 0) || (offset.num_planes == 0)) {
         // Re-calculate frame offset in case of online rotation
         cam_stream_info_t streamInfo = *mStreamInfo;
         getFrameDimension(streamInfo.dim);
@@ -2433,7 +2484,7 @@ int32_t QCameraStream::mapBuf(uint8_t buf_type, uint32_t buf_idx,
  *==========================================================================*/
 
 int32_t QCameraStream::mapBufs(cam_buf_map_type_list bufMapList,
-        mm_camera_map_unmap_ops_tbl_t *ops_tbl)
+        __unused mm_camera_map_unmap_ops_tbl_t *ops_tbl)
 {
     if (m_MemOpsTbl.bundled_map_ops != NULL) {
         return m_MemOpsTbl.bundled_map_ops(&bufMapList, m_MemOpsTbl.userdata);
@@ -2600,11 +2651,17 @@ int32_t QCameraStream::configStream()
  *==========================================================================*/
 int32_t QCameraStream::setSyncDataCB(stream_cb_routine data_cb)
 {
+    int32_t rc = NO_ERROR;
+
     if (mCamOps != NULL) {
         mSYNCDataCB = data_cb;
-        return mCamOps->register_stream_buf_cb(mCamHandle,
+        rc = mCamOps->register_stream_buf_cb(mCamHandle,
                 mChannelHandle, mHandle, dataNotifySYNCCB, MM_CAMERA_STREAM_CB_TYPE_SYNC,
                 this);
+        if (rc == NO_ERROR) {
+            mSyncCBEnabled = TRUE;
+            return rc;
+        }
     }
     LOGE("Interface handle is NULL");
     return UNKNOWN_ERROR;

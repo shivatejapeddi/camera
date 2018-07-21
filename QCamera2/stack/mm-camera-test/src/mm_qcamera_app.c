@@ -27,13 +27,18 @@
  *
  */
 
-#include <ctype.h>
+// To remove
 #include <cutils/properties.h>
-#include <fcntl.h>
-#include <dlfcn.h>
-#include <linux/msm_ion.h>
-#include <sys/mman.h>
 
+// System dependencies
+#include <dlfcn.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/msm_ion.h>
+#define MMAN_H <SYSTEM_HEADER_PREFIX/mman.h>
+#include MMAN_H
+
+// Camera dependencies
 #include "mm_qcamera_dbg.h"
 #include "mm_qcamera_app.h"
 
@@ -109,7 +114,8 @@ int mm_app_load_hal(mm_camera_app_t *my_cam_app)
     return MM_CAMERA_OK;
 }
 
-int mm_app_allocate_ion_memory(mm_camera_app_buf_t *buf, unsigned int ion_type)
+int mm_app_allocate_ion_memory(mm_camera_app_buf_t *buf,
+        __unused unsigned int ion_type)
 {
     int rc = MM_CAMERA_OK;
     struct ion_handle_data handle_data;
@@ -1852,7 +1858,8 @@ EXIT:
 
 int mm_camera_lib_send_command(mm_camera_lib_handle *handle,
                                mm_camera_lib_commands cmd,
-                               void *in_data, void *out_data)
+                               void *in_data,
+                               __unused void *out_data)
 {
     uint32_t width, height;
     int rc = MM_CAMERA_OK;

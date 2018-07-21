@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2015, The Linux Foundataion. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -28,13 +28,14 @@
 */
 
 #define LOG_TAG "QCamera3Stream"
-//#define LOG_NDEBUG 0
 
-#include <utils/Log.h>
-#include <utils/Errors.h>
+// Camera dependencies
 #include "QCamera3HWI.h"
 #include "QCamera3Stream.h"
-#include "QCamera3Channel.h"
+
+extern "C" {
+#include "mm_camera_dbg.h"
+}
 
 using namespace android;
 
@@ -323,7 +324,7 @@ int32_t QCamera3Stream::init(cam_stream_type_t streamType,
                             cam_rotation_t streamRotation,
                             cam_stream_reproc_config_t* reprocess_config,
                             uint8_t minNumBuffers,
-                            uint32_t postprocess_mask,
+                            cam_feature_mask_t postprocess_mask,
                             cam_is_type_t is_type,
                             uint32_t batchSize,
                             hal3_stream_cb_routine stream_cb,
@@ -365,7 +366,7 @@ int32_t QCamera3Stream::init(cam_stream_type_t streamType,
     mStreamInfo->pp_config.feature_mask = postprocess_mask;
     mStreamInfo->is_type = is_type;
     mStreamInfo->pp_config.rotation = streamRotation;
-    LOGD("stream_type is %d, feature_mask is %d",
+    LOGD("stream_type is %d, feature_mask is %Ld",
            mStreamInfo->stream_type, mStreamInfo->pp_config.feature_mask);
 
     bufSize = mStreamInfoBuf->getSize(0);
@@ -1402,7 +1403,6 @@ int32_t QCamera3Stream::aggregateBufToBatch(mm_camera_buf_def_t& bufDef)
 int32_t QCamera3Stream::queueBatchBuf()
 {
     int32_t rc = NO_ERROR;
-    struct msm_camera_user_buf_cont_t *cont_buf = NULL;
 
     if (!mCurrentBatchBufDef) {
         LOGE("No buffers were queued into batch");

@@ -27,25 +27,24 @@
  *
  */
 
+// System dependencies
 #include <pthread.h>
 #include <errno.h>
-#include <sys/ioctl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/prctl.h>
 #include <fcntl.h>
-#include <poll.h>
 #include <math.h>
-
-#include "mm_jpeg_dbg.h"
-#include "mm_jpeg_interface.h"
-#include "mm_jpeg.h"
-#include "mm_jpeg_inlines.h"
+#define PRCTL_H <SYSTEM_HEADER_PREFIX/prctl.h>
+#include PRCTL_H
 
 #ifdef LOAD_ADSP_RPC_LIB
 #include <dlfcn.h>
 #include <stdlib.h>
 #endif
+
+// JPEG dependencies
+#include "mm_jpeg_dbg.h"
+#include "mm_jpeg_interface.h"
+#include "mm_jpeg.h"
+#include "mm_jpeg_inlines.h"
 
 #define ENCODING_MODE_PARALLEL 1
 
@@ -79,6 +78,27 @@ static void mm_jpegenc_job_done(mm_jpeg_job_session_t *p_session);
 mm_jpeg_job_q_node_t* mm_jpeg_queue_remove_job_by_dst_ptr(
   mm_jpeg_queue_t* queue, void * dst_ptr);
 static OMX_ERRORTYPE mm_jpeg_session_configure(mm_jpeg_job_session_t *p_session);
+
+/** mm_jpeg_get_comp_name:
+ *
+ *  Arguments:
+ *       None
+ *
+ *  Return:
+ *       Encoder component name
+ *
+ *  Description:
+ *       Get the name of omx component to be used for jpeg encoding
+ *
+ **/
+inline char* mm_jpeg_get_comp_name()
+{
+#ifdef MM_JPEG_USE_PIPELINE
+  return "OMX.qcom.image.jpeg.encoder_pipeline";
+#else
+  return "OMX.qcom.image.jpeg.encoder";
+#endif
+}
 
 /** mm_jpeg_session_send_buffers:
  *
@@ -278,7 +298,6 @@ OMX_ERRORTYPE mm_jpeg_session_create(mm_jpeg_job_session_t* p_session)
 {
   OMX_ERRORTYPE rc = OMX_ErrorNone;
   mm_jpeg_obj *my_obj = (mm_jpeg_obj *) p_session->jpeg_obj;
-  char *omx_lib = "OMX.qcom.image.jpeg.encoder";
 
   pthread_mutex_init(&p_session->lock, NULL);
   pthread_cond_init(&p_session->cond, NULL);
@@ -300,11 +319,10 @@ OMX_ERRORTYPE mm_jpeg_session_create(mm_jpeg_job_session_t* p_session)
   p_session->thumb_from_main = 0;
 #ifdef MM_JPEG_USE_PIPELINE
   p_session->thumb_from_main = !p_session->params.thumb_from_postview;
-  omx_lib = "OMX.qcom.image.jpeg.encoder_pipeline";
 #endif
 
   rc = OMX_GetHandle(&p_session->omx_handle,
-      omx_lib,
+      mm_jpeg_get_comp_name(),
       (void *)p_session,
       &p_session->omx_callbacks);
   if (OMX_ErrorNone != rc) {
@@ -361,6 +379,13 @@ void mm_jpeg_session_destroy(mm_jpeg_job_session_t* p_session)
     if (rc) {
       LOGE("Error");
     }
+  }
+
+  /* If current session is the session in progress
+     set session in progress pointer to null*/
+  p_session->config = OMX_FALSE;
+  if (my_obj->p_session_inprogress == p_session) {
+    my_obj->p_session_inprogress = NULL;
   }
 
   rc = OMX_FreeHandle(p_session->omx_handle);
@@ -951,7 +976,7 @@ OMX_ERRORTYPE mm_jpeg_session_config_ports(mm_jpeg_job_session_t* p_session)
  *    @crop_width : flag indicating if width needs to be cropped
  *
  *  Return:
- *       OMX error values
+ *    OMX error values
  *
  *  Description:
  *    Updates thumbnail crop aspect ratio based on
@@ -965,24 +990,36 @@ OMX_ERRORTYPE mm_jpeg_update_thumbnail_crop(mm_jpeg_dim_t *p_thumb_dim,
   int32_t cropped_width = 0, cropped_height = 0;
 
   if (crop_width) {
-    //Keep height constant
+    // Keep height constant
     cropped_height = p_thumb_dim->crop.height;
     cropped_width = floor((cropped_height * p_thumb_dim->dst_dim.width) /
       p_thumb_dim->dst_dim.height);
+    if (cropped_width % 2) {
+      cropped_width -= 1;
+    }
   } else {
-    //Keep width constant
+    // Keep width constant
     cropped_width = p_thumb_dim->crop.width;
     cropped_height = floor((cropped_width * p_thumb_dim->dst_dim.height) /
       p_thumb_dim->dst_dim.width);
+    if (cropped_height % 2) {
+      cropped_height -= 1;
+    }
   }
   p_thumb_dim->crop.left = p_thumb_dim->crop.left +
     floor((p_thumb_dim->crop.width - cropped_width) / 2);
+  if (p_thumb_dim->crop.left % 2) {
+    p_thumb_dim->crop.left -= 1;
+  }
   p_thumb_dim->crop.top = p_thumb_dim->crop.top +
     floor((p_thumb_dim->crop.height - cropped_height) / 2);
+  if (p_thumb_dim->crop.top % 2) {
+    p_thumb_dim->crop.top -= 1;
+  }
   p_thumb_dim->crop.width = cropped_width;
   p_thumb_dim->crop.height = cropped_height;
 
-  LOGD("%s %d New thumbnail crop: left %d, top %d, crop width %d,"
+  LOGH("New thumbnail crop: left %d, top %d, crop width %d,"
     " crop height %d", p_thumb_dim->crop.left,
     p_thumb_dim->crop.top, p_thumb_dim->crop.width,
     p_thumb_dim->crop.height);
@@ -1111,8 +1148,8 @@ OMX_ERRORTYPE mm_jpeg_session_config_thumbnail(mm_jpeg_job_session_t* p_session)
     thumbnail_info.output_height = (OMX_U32)p_thumb_dim->src_dim.height;
   }
 
-  //If the thumbnail crop aspect ratio image and thumbnail dest aspect
-  //ratio are different, reset the thumbnail crop
+  // If the thumbnail crop aspect ratio image and thumbnail dest aspect
+  // ratio are different, reset the thumbnail crop
   double thumbcrop_aspect_ratio = (double)p_thumb_dim->crop.width /
     (double)p_thumb_dim->crop.height;
   double thumbdst_aspect_ratio = (double)p_thumb_dim->dst_dim.width /
@@ -1125,7 +1162,7 @@ OMX_ERRORTYPE mm_jpeg_session_config_thumbnail(mm_jpeg_job_session_t* p_session)
     mm_jpeg_update_thumbnail_crop(p_thumb_dim, 1);
   }
 
-  //Fill thumbnail crop info
+  // Fill thumbnail crop info
   thumbnail_info.crop_info.nWidth = (OMX_U32)p_thumb_dim->crop.width;
   thumbnail_info.crop_info.nHeight = (OMX_U32)p_thumb_dim->crop.height;
   thumbnail_info.crop_info.nLeft = p_thumb_dim->crop.left;
@@ -1453,28 +1490,27 @@ static OMX_ERRORTYPE mm_jpeg_config_multi_image_info(
   OMX_INDEXTYPE multi_image_index;
   mm_jpeg_encode_job_t *p_jobparams = &p_session->encode_job;
 
+  ret = OMX_GetExtensionIndex(p_session->omx_handle,
+    QOMX_IMAGE_EXT_MULTI_IMAGE_NAME, &multi_image_index);
+  if (ret) {
+    LOGE("Error getting multi image info extention index %d", ret);
+    return ret;
+  }
+  memset(&multi_image_info, 0, sizeof(multi_image_info));
   if (p_jobparams->multi_image_info.type == MM_JPEG_TYPE_MPO) {
-    ret = OMX_GetExtensionIndex(p_session->omx_handle,
-      QOMX_IMAGE_EXT_MULTI_IMAGE_NAME, &multi_image_index);
-    if (ret) {
-      LOGE("Error getting multi image info extention index %d", ret);
-      return ret;
-    }
-    memset(&multi_image_info, 0, sizeof(multi_image_info));
-    if (p_jobparams->multi_image_info.type == MM_JPEG_TYPE_MPO) {
-      multi_image_info.image_type = QOMX_JPEG_IMAGE_TYPE_MPO;
-    } else {
-      multi_image_info.image_type = QOMX_JPEG_IMAGE_TYPE_JPEG;
-    }
-    multi_image_info.is_primary_image = p_jobparams->multi_image_info.is_primary;
-    multi_image_info.num_of_images = p_jobparams->multi_image_info.num_of_images;
+    multi_image_info.image_type = QOMX_JPEG_IMAGE_TYPE_MPO;
+  } else {
+    multi_image_info.image_type = QOMX_JPEG_IMAGE_TYPE_JPEG;
+  }
+  multi_image_info.is_primary_image = p_jobparams->multi_image_info.is_primary;
+  multi_image_info.num_of_images = p_jobparams->multi_image_info.num_of_images;
+  multi_image_info.enable_metadata = p_jobparams->multi_image_info.enable_metadata;
 
-    ret = OMX_SetConfig(p_session->omx_handle, multi_image_index,
-      &multi_image_info);
-    if (ret) {
-      LOGE("Error setting multi image config");
-      return ret;
-    }
+  ret = OMX_SetConfig(p_session->omx_handle, multi_image_index,
+    &multi_image_info);
+  if (ret) {
+    LOGE("Error setting multi image config");
+    return ret;
   }
   return ret;
 }
@@ -1653,6 +1689,7 @@ static OMX_ERRORTYPE mm_jpeg_session_encode(mm_jpeg_job_session_t *p_session)
 {
   OMX_ERRORTYPE ret = OMX_ErrorNone;
   mm_jpeg_encode_job_t *p_jobparams = &p_session->encode_job;
+  mm_jpeg_obj *my_obj = (mm_jpeg_obj *) p_session->jpeg_obj;
 
   pthread_mutex_lock(&p_session->lock);
   p_session->abort_state = MM_JPEG_ABORT_NONE;
@@ -1670,12 +1707,44 @@ static OMX_ERRORTYPE mm_jpeg_session_encode(mm_jpeg_job_session_t *p_session)
   }
 
   if (OMX_FALSE == p_session->config) {
+    /* If another session in progress clear that sessions configuration */
+    if (my_obj->p_session_inprogress != NULL) {
+      OMX_STATETYPE state;
+      mm_jpeg_job_session_t *p_session_inprogress = my_obj->p_session_inprogress;
+
+      OMX_GetState(p_session_inprogress->omx_handle, &state);
+
+      //Check state before state transition
+      if ((state == OMX_StateExecuting) || (state == OMX_StatePause)) {
+        ret = mm_jpeg_session_change_state(p_session_inprogress,
+          OMX_StateIdle, NULL);
+        if (ret) {
+          LOGE("Error");
+          goto error;
+        }
+      }
+
+      OMX_GetState(p_session_inprogress->omx_handle, &state);
+
+      if (state == OMX_StateIdle) {
+        ret = mm_jpeg_session_change_state(p_session_inprogress,
+          OMX_StateLoaded, mm_jpeg_session_free_buffers);
+        if (ret) {
+          LOGE("Error");
+          goto error;
+        }
+      }
+      p_session_inprogress->config = OMX_FALSE;
+      my_obj->p_session_inprogress = NULL;
+    }
+
     ret = mm_jpeg_session_configure(p_session);
     if (ret) {
       LOGE("Error");
       goto error;
     }
     p_session->config = OMX_TRUE;
+    my_obj->p_session_inprogress = p_session;
   }
 
   ret = mm_jpeg_configure_job_params(p_session);
@@ -2131,6 +2200,9 @@ int32_t mm_jpeg_init(mm_jpeg_obj *my_obj)
   }
 #endif
 
+  // create dummy OMX handle to avoid dlopen latency
+  OMX_GetHandle(&my_obj->dummy_handle, mm_jpeg_get_comp_name(), NULL, NULL);
+
   return rc;
 }
 
@@ -2157,6 +2229,10 @@ int32_t mm_jpeg_deinit(mm_jpeg_obj *my_obj)
     LOGE("Error");
   }
 
+  if (my_obj->dummy_handle) {
+    OMX_FreeHandle(my_obj->dummy_handle);
+  }
+
   /* unload OMX engine */
   OMX_Deinit();
 
@@ -2173,6 +2249,7 @@ int32_t mm_jpeg_deinit(mm_jpeg_obj *my_obj)
       LOGE("Error releasing ION buffer");
     }
   }
+  my_obj->work_buf_cnt = 0;
   my_obj->jpeg_metadata = NULL;
 
   /* destroy locks */
@@ -2624,14 +2701,21 @@ int32_t mm_jpeg_create_session(mm_jpeg_obj *my_obj,
     mm_jpeg_read_meta_keyfile(p_session, META_KEYFILE);
 #endif
 
-    if (OMX_FALSE == p_session->config) {
+    pthread_mutex_lock(&my_obj->job_lock);
+    /* Configure session if not already configured and if
+       no other session configured*/
+    if ((OMX_FALSE == p_session->config) &&
+      (my_obj->p_session_inprogress == NULL)) {
       rc = mm_jpeg_session_configure(p_session);
       if (rc) {
         LOGE("Error");
+        pthread_mutex_unlock(&my_obj->job_lock);
         goto error2;
       }
       p_session->config = OMX_TRUE;
+      my_obj->p_session_inprogress = p_session;
     }
+    pthread_mutex_unlock(&my_obj->job_lock);
     p_session->num_omx_sessions = num_omx_sessions;
 
     LOGH("session id %x thumb_from_main %d",
@@ -2969,8 +3053,8 @@ OMX_ERRORTYPE mm_jpeg_fbd(OMX_HANDLETYPE hComponent,
   OMX_ERRORTYPE ret = OMX_ErrorNone;
   mm_jpeg_job_session_t *p_session = (mm_jpeg_job_session_t *) pAppData;
   mm_jpeg_output_t output_buf;
-  LOGH("count %d ", p_session->fbd_count);
-  LOGH("KPI Perf] : PROFILE_JPEG_FBD");
+  LOGI("count %d ", p_session->fbd_count);
+  LOGI("KPI Perf] : PROFILE_JPEG_FBD");
 
   pthread_mutex_lock(&p_session->lock);
   KPI_ATRACE_INT("Camera:JPEG",

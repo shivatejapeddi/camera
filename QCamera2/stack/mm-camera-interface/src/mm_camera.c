@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, 2016, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -27,17 +27,19 @@
  *
  */
 
+// To remove
+#include <cutils/properties.h>
+
+// System dependencies
 #include <pthread.h>
 #include <errno.h>
-#include <sys/ioctl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
-#include <poll.h>
-#include <cutils/properties.h>
 #include <stdlib.h>
+#define IOCTL_H <SYSTEM_HEADER_PREFIX/ioctl.h>
+#include IOCTL_H
 
-#include <cam_semaphore.h>
+// Camera dependencies
+#include "cam_semaphore.h"
 #include "mm_camera_dbg.h"
 #include "mm_camera_sock.h"
 #include "mm_camera_interface.h"
@@ -257,8 +259,7 @@ int32_t mm_camera_open(mm_camera_obj_t *my_obj)
     uint8_t sleep_msec=MM_CAMERA_DEV_OPEN_RETRY_SLEEP;
     int cam_idx = 0;
     const char *dev_name_value = NULL;
-    char prop[PROPERTY_VALUE_MAX];
-    uint32_t globalLogLevel = 0;
+    int l_errno = 0;
 
     LOGD("begin\n");
 
@@ -278,7 +279,8 @@ int32_t mm_camera_open(mm_camera_obj_t *my_obj)
         n_try--;
         errno = 0;
         my_obj->ctrl_fd = open(dev_name, O_RDWR | O_NONBLOCK);
-        LOGD("ctrl_fd = %d, errno == %d", my_obj->ctrl_fd, errno);
+        l_errno = errno;
+        LOGD("ctrl_fd = %d, errno == %d", my_obj->ctrl_fd, l_errno);
         if((my_obj->ctrl_fd >= 0) || (errno != EIO && errno != ETIMEDOUT) || (n_try <= 0 )) {
             LOGH("opened, break out while loop");
             break;
@@ -290,8 +292,8 @@ int32_t mm_camera_open(mm_camera_obj_t *my_obj)
 
     if (my_obj->ctrl_fd < 0) {
         LOGE("cannot open control fd of '%s' (%s)\n",
-                 dev_name, strerror(errno));
-        if (errno == EBUSY)
+                  dev_name, strerror(l_errno));
+        if (l_errno == EBUSY)
             rc = -EUSERS;
         else
             rc = -1;
@@ -303,7 +305,8 @@ int32_t mm_camera_open(mm_camera_obj_t *my_obj)
     do {
         n_try--;
         my_obj->ds_fd = mm_camera_socket_create(cam_idx, MM_CAMERA_SOCK_TYPE_UDP);
-        LOGD("ds_fd = %d, errno = %d", my_obj->ds_fd, errno);
+        l_errno = errno;
+        LOGD("ds_fd = %d, errno = %d", my_obj->ds_fd, l_errno);
         if((my_obj->ds_fd >= 0) || (n_try <= 0 )) {
             LOGD("opened, break out while loop");
             break;
@@ -315,7 +318,7 @@ int32_t mm_camera_open(mm_camera_obj_t *my_obj)
 
     if (my_obj->ds_fd < 0) {
         LOGE("cannot open domain socket fd of '%s'(%s)\n",
-                 dev_name, strerror(errno));
+                  dev_name, strerror(l_errno));
         rc = -1;
         goto on_error;
     }
@@ -2159,7 +2162,6 @@ int32_t mm_camera_reg_stream_buf_cb(mm_camera_obj_t *my_obj,
         mm_camera_stream_cb_type cb_type, void *userdata)
 {
     int rc = 0;
-    mm_stream_t *stream = NULL;
     mm_stream_data_cb_t buf_cb;
     mm_channel_t * ch_obj =
             mm_camera_util_get_channel_by_handler(my_obj, ch_id);
@@ -2213,11 +2215,11 @@ int g_cam_log[CAM_LAST_MODULE][CAM_GLBL_DBG_INFO + 1] = {
 static const char *cam_dbg_level_to_str[] = {
      "",        /* CAM_GLBL_DBG_NONE  */
      "<ERROR>", /* CAM_GLBL_DBG_ERR   */
-     "<WARN >", /* CAM_GLBL_DBG_WARN  */
-     "<HIGH >", /* CAM_GLBL_DBG_HIGH  */
-     "<DBG  >", /* CAM_GLBL_DBG_DEBUG */
-     "<LOW  >", /* CAM_GLBL_DBG_LOW   */
-     "<INFO >"  /* CAM_GLBL_DBG_INFO  */
+     "<WARN>", /* CAM_GLBL_DBG_WARN  */
+     "<HIGH>", /* CAM_GLBL_DBG_HIGH  */
+     "<DBG>", /* CAM_GLBL_DBG_DEBUG */
+     "<LOW>", /* CAM_GLBL_DBG_LOW   */
+     "<INFO>"  /* CAM_GLBL_DBG_INFO  */
 };
 
 /* current trace logging configuration */
@@ -2232,9 +2234,9 @@ static module_debug_t cam_loginfo[(int)CAM_LAST_MODULE] = {
   {CAM_GLBL_DBG_ERR, 1,
       "",         "persist.camera.global.debug"     }, /* CAM_NO_MODULE     */
   {CAM_GLBL_DBG_ERR, 1,
-      "<HAL >", "persist.camera.hal.debug"        }, /* CAM_HAL_MODULE    */
+      "<HAL>", "persist.camera.hal.debug"        }, /* CAM_HAL_MODULE    */
   {CAM_GLBL_DBG_ERR, 1,
-      "<MCI >", "persist.camera.mci.debug"        }, /* CAM_MCI_MODULE    */
+      "<MCI>", "persist.camera.mci.debug"        }, /* CAM_MCI_MODULE    */
   {CAM_GLBL_DBG_ERR, 1,
       "<JPEG>", "persist.camera.mmstill.logs"     }, /* CAM_JPEG_MODULE   */
 };
@@ -2248,6 +2250,7 @@ static module_debug_t cam_loginfo[(int)CAM_LAST_MODULE] = {
  *
  *  Return: logging level
  **/
+__unused
 static cam_global_debug_level_t cam_get_dbg_level(const char *module,
   char *pValue) {
 
